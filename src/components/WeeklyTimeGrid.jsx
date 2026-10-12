@@ -40,8 +40,8 @@ function getHeatColor(ratio) {
     return 'rgb(6, 95, 70)'
   }
 
-  const hue = 40 + (1 - ratio) * 80
-  const lightness = 35 + ratio * 35
+  const hue = 40 + ratio * 80
+  const lightness = 35 + (1 - ratio) * 35
   return `hsl(${hue}, 82%, ${lightness}%)`
 }
 
