@@ -1,13 +1,13 @@
+import WeeklyTimeGrid from './components/WeeklyTimeGrid'
+
 function App() {
   return (
-    <div className="app">
-      <header style={{ padding: '20px', borderBottom: '1px solid #ccc' }}>
-        <h1>⏱️ 团队时间管理</h1>
-      </header>
-      <main style={{ padding: '20px' }}>
-        <p>欢迎回来！这里是你的时间面板。</p>
-      </main>
-    </div>
+    <main className="min-h-screen bg-[#f5f6f2] px-4 py-8 text-stone-900 sm:px-8 sm:py-14">
+      <div className="mx-auto flex w-full max-w-6xl flex-col items-center">
+        <WeeklyTimeGrid />
+      </div>
+    </main>
   )
 }
+
 export default App
