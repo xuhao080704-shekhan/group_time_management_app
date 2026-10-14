@@ -68,6 +68,90 @@ function groupSlotsByDate(slots) {
   }, {})
 }
 
+function buildFeasibilitySegments(people, date) {
+  const daySlots = people.flatMap((person) =>
+    person.slots
+      .filter((slot) => slot.date === date && slot.available)
+      .map((slot) => ({
+        personId: person.id,
+        start: getMinutes(slot.startTime),
+        end: slot.endTime === '24:00' ? 1440 : getMinutes(slot.endTime),
+      }))
+      .filter((slot) => slot.end > slot.start && slot.start >= 0 && slot.end <= 1440),
+  )
+  const boundaries = [...new Set([0, 1440, ...daySlots.flatMap(({ start, end }) => [start, end])])]
+    .sort((a, b) => a - b)
+
+  return boundaries.slice(0, -1).map((start, index) => {
+    const end = boundaries[index + 1]
+    const availablePeople = new Set(
+      daySlots
+        .filter((slot) => slot.start <= start && slot.end >= end)
+        .map((slot) => slot.personId),
+    )
+
+    return { start, end, count: availablePeople.size }
+  })
+}
+
+function getHeatColor(count, totalPeople) {
+  if (count === 0) return 'bg-stone-300 text-stone-800'
+
+  const ratio = count / Math.max(totalPeople, 1)
+  if (ratio <= 0.25) return 'bg-rose-600 text-white'
+  if (ratio <= 0.5) return 'bg-orange-500 text-white'
+  if (ratio <= 0.75) return 'bg-lime-400 text-stone-900'
+  return 'bg-emerald-700 text-white'
+}
+
+function formatMinute(minute) {
+  if (minute === 1440) return '24:00'
+  const hours = Math.floor(minute / 60)
+  const minutes = minute % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function FeasibilityHeatmap({ date, people }) {
+  const segments = buildFeasibilitySegments(people, date)
+  const totalPeople = people.length
+
+  return (
+    <div className="rounded-lg border border-stone-200 bg-white p-3">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-sm font-semibold text-stone-800">可行人数总览</span>
+        <span className="text-xs text-stone-500">按有空人数着色，共 {totalPeople} 人</span>
+      </div>
+      <TimeAxis />
+      <div className="flex h-9 overflow-hidden rounded-md bg-stone-100" aria-label={`${date} 可行人数热力图`}>
+        {segments.map((segment) => {
+          const width = ((segment.end - segment.start) / 1440) * 100
+          const label = width >= 5.5 ? `${segment.count}人` : ''
+          const title = `${formatMinute(segment.start)}–${formatMinute(segment.end)}：${segment.count}/${totalPeople} 人有空`
+
+          return (
+            <div
+              key={`${segment.start}-${segment.end}`}
+              className={`flex min-w-0 items-center justify-center border-r border-white/50 text-[10px] font-bold tabular-nums last:border-r-0 ${getHeatColor(segment.count, totalPeople)}`}
+              style={{ width: `${width}%` }}
+              title={title}
+              aria-label={title}
+            >
+              {label}
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-stone-600">
+        <span className="inline-flex items-center gap-1"><i className="size-2 rounded-sm bg-stone-300" />0 人</span>
+        <span className="inline-flex items-center gap-1"><i className="size-2 rounded-sm bg-rose-600" />少数可行</span>
+        <span className="inline-flex items-center gap-1"><i className="size-2 rounded-sm bg-orange-500" />部分可行</span>
+        <span className="inline-flex items-center gap-1"><i className="size-2 rounded-sm bg-lime-400" />多数可行</span>
+        <span className="inline-flex items-center gap-1"><i className="size-2 rounded-sm bg-emerald-700" />全员可行</span>
+      </div>
+    </div>
+  )
+}
+
 function TimeAxis({ className = '' }) {
   return (
     <div className={`relative h-5 text-[10px] text-stone-500 ${className}`} aria-hidden="true">
@@ -313,6 +397,11 @@ export default function WeeklyTimeGrid() {
     participants.forEach((person) => person.slots.forEach((slot) => dateSet.add(slot.date)))
     return [...dateSet].sort()
   }, [participants, slots])
+  const ownShareId = new URLSearchParams(window.location.search).get('share')
+  const comparisonPeople = useMemo(() => {
+    const ownPerson = { id: ownShareId || 'mine', name: '我', slots }
+    return [ownPerson, ...participants.filter((person) => person.id !== ownShareId)]
+  }, [ownShareId, participants, slots])
 
   return (
     <section className="w-full max-w-5xl overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-[0_18px_50px_-36px_rgba(31,41,35,0.35)]">
@@ -502,14 +591,9 @@ export default function WeeklyTimeGrid() {
             {participants.length > 0 && participantDates.length > 0 ? (
               <div className="space-y-5">
                 {participantDates.map((day) => {
-                  const dayRows = [
-                    { id: 'mine', name: '我', slots: slots.filter((slot) => slot.date === day) },
-                    ...participants.map((person) => ({
-                      id: person.id,
-                      name: person.name,
-                      slots: person.slots.filter((slot) => slot.date === day),
-                    })),
-                  ].flatMap((person) => person.slots.map((slot, index) => ({
+                  const dayRows = comparisonPeople.flatMap((person) => person.slots
+                    .filter((slot) => slot.date === day)
+                    .map((slot, index) => ({
                     ...person,
                     slot,
                     rowKey: `${person.id}-${slot.id}-${index}`,
@@ -547,6 +631,18 @@ export default function WeeklyTimeGrid() {
               </div>
             ) : (
               <p className="rounded-lg bg-stone-50 px-4 py-6 text-center text-sm text-stone-500">加载分享 ID 后，这里会按日期显示自己和参与者的 24 小时时间轴。</p>
+            )}
+
+            {participants.length > 0 && participantDates.length > 0 && (
+              <section className="space-y-4 border-t border-stone-200 pt-5">
+                <div>
+                  <h2 className="font-semibold text-stone-900">多人可行人数热力图</h2>
+                  <p className="mt-1 text-sm text-stone-500">每段显示该时间内有空的人数；灰色表示无人可行，绿色表示全员可行。</p>
+                </div>
+                {participantDates.map((day) => (
+                  <FeasibilityHeatmap key={day} date={day} people={comparisonPeople} />
+                ))}
+              </section>
             )}
           </>
         )}
